@@ -1,0 +1,31 @@
+# HLK-LD2402 服务
+
+# 设置运动阈值服务
+set_motion_threshold:
+  fields:
+    gate: int  # 门编号 (0-15)
+    db_value: float  # dB 值
+  required: [gate, db_value]  # 必需的参数
+  
+# 设置微动阈值服务
+set_micromotion_threshold:
+  fields:
+    gate: int  # 门编号 (0-15)
+    db_value: float  # dB 值
+  required: [gate, db_value]  # 必需的参数
+
+# 使用系数进行校准服务
+calibrate_with_coefficients:
+  fields:
+    trigger_coefficient: float  # 触发系数
+    hold_coefficient: float  # 保持系数
+    micromotion_coefficient: float  # 微动系数
+  required: [trigger_coefficient, hold_coefficient, micromotion_coefficient]  # 必需的参数
+
+# 读取所有运动阈值服务
+read_motion_thresholds:
+  # 无参数 - 读取所有运动阈值 (门 0-15)
+  
+# 读取所有微动阈值服务
+read_micromotion_thresholds:
+  # 无参数 - 读取所有微动阈值 (门 0-15)

@@ -1,0 +1,1093 @@
+# ==================== 基础设备配置 ====================
+esphome:
+  name: 8266a
+  friendly_name: 雷达传感器
+  # 开机自动执行：等待雷达初始化 → 读取阈值 → 同步滑块
+esp8266:
+  board: nodemcuv2  # ESP8266 NodeMCU开发板
+
+# 日志输出
+logger:
+  baud_rate: 0  # 设置为0表示禁用串口日志输出，节省UART资源
+  level: error  # 只显示错误信息
+  # 重要警告：本项目必须禁用串口日志输出
+  # 原因：雷达传感器通过UART串口通信，如果启用日志输出，会占用串口资源
+  # 导致传感器无法正常通信，设备可能无法开机或工作异常
+  # 日志级别设置（可选）：
+  # - none: 完全禁用日志输出
+  # - error: 只显示错误信息
+  # - warning: 显示警告和错误
+  # - info: 基本信息日志，适合正常运行
+  # - debug: 最详细的日志，包含所有调试信息
+  # 示例：level: info
+# Home Assistant API连接
+api:
+  encryption:
+    key: !secret api_encryption_key
+# 远程OTA升级
+ota:
+  - platform: esphome
+    password: !secret ota_password
+# WiFi配置
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  min_auth_mode: WPA2
+  power_save_mode: high  # 启用高功耗节省模式
+  # 高功耗节省模式的代价：
+  # 1. 可能会增加WiFi连接延迟，导致响应变慢
+  # 2. 可能会增加WiFi断开的概率，特别是在信号较弱的情况下
+  # 3. 可能会影响实时通信的可靠性
+  # 建议：
+  # - 如果设备使用电池供电，且对实时性要求不高，可以启用
+  # - 如果设备使用 mains 供电，且需要实时响应，建议保持默认值（无电源节省）
+  # 备用热点（WiFi断开时自动开启）
+  ap:
+    ssid: "8266A Fallback Hotspo"
+    password: !secret ap_password
+# 强制门户（备用热点配网）
+captive_portal:
+    
+
+# ==================== HLK-LD2402 雷达核心配置 ====================
+# UART串口通信（雷达与ESP8266数据传输）
+uart:
+  id: uart_bus
+  tx_pin: GPIO1  # 发送引脚
+  rx_pin: GPIO3  # 接收引脚
+  baud_rate: 115200
+  data_bits: 8
+  parity: NONE
+  stop_bits: 1
+  rx_buffer_size: 300  # 增加接收缓冲区大小
+  
+# 本地组件（推荐）：使用相对路径，组件文件放在 components/hlk_ld2402 目录
+external_components:
+  - source:
+      type: local
+      path: components
+    components: [hlk_ld2402]
+
+# 远程组件（备用）：直接从 GitHub 下载，无需本地文件
+# external_components:
+#   - source:
+#       type: git
+#       url: https://github.com/yourusername/esphome-hlk-ld2402
+#     components: [hlk_ld2402]
+
+# 雷达主模块配置
+hlk_ld2402:
+  uart_id: uart_bus
+  id: radar_sensor
+  max_distance: 8  # 最大检测距离8米
+  timeout: 5         # 通信超时时间
+  engineering_throttle: 3000ms  # 工程数据节流时间，默认2000ms
+
+# Gate threshold control selectors
+# 修复后的select部分（只保留template组件）
+select:
+
+    
+  - platform: template
+    name: "距离段编号数值类型"
+    id: threshold_type_select 
+    options:
+      - "运动阈值"
+      - "微动阈值"
+    initial_option: "运动阈值"
+    icon: "mdi:tune"
+    entity_category: config
+    optimistic: true
+
+  - platform: template
+    name: "距离段编号"
+    id: gate_number_select
+    options: ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15"]
+    initial_option: "0"
+    icon: "mdi:gate"
+    entity_category: config
+    optimistic: true
+
+
+# Binary sensors
+binary_sensor:
+  - platform: hlk_ld2402
+    id: radar_presence
+    name: "存在⁡​检测"
+    device_class: presence
+    hlk_ld2402_id: radar_sensor
+
+  - platform: hlk_ld2402
+    id: radar_micromovement
+    name: "微⁡动检测"
+    device_class: motion
+    hlk_ld2402_id: radar_sensor
+  
+  - platform: hlk_ld2402
+    id: radar_power_interference
+    name: "电⁡源干扰⁡⁡⁡"
+    device_class: problem
+    power_interference: true
+    hlk_ld2402_id: radar_sensor
+
+# Distance sensor
+sensor:
+  - platform: hlk_ld2402
+    id: radar_distance
+    name: "距⁡离"
+    hlk_ld2402_id: radar_sensor
+    device_class: distance
+    unit_of_measurement: "cm"
+    accuracy_decimals: 1
+    throttle: 3000ms  # Use direct parameter for throttling
+    distance_change_threshold: 30.0  # 距离变化阈值为30厘米
+    
+  # Calibration progress sensor
+  - platform: hlk_ld2402
+    id: radar_calibration_progress
+    name: "校准进​⁡度"
+    hlk_ld2402_id: radar_sensor
+    unit_of_measurement: "%"
+    icon: "mdi:progress-wrench"
+    state_class: measurement
+    calibration_progress: true
+
+# Energy Gate Sensors (1-15)
+  - platform: hlk_ld2402
+    id: radar_energy_gate_01
+    name: "能量段 1 运动数值 (0.7-1.4m)"
+    hlk_ld2402_id: radar_sensor
+    state_class: measurement
+    unit_of_measurement: "dB"
+    icon: "mdi:antenna"
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    energy_gate:
+      gate_index: 1
+
+  - platform: hlk_ld2402
+    id: radar_energy_gate_02
+    name: "能量段 2 运动数值 (1.4-2.1m)"
+    hlk_ld2402_id: radar_sensor
+    state_class: measurement
+    unit_of_measurement: "dB"
+    icon: "mdi:antenna"
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    energy_gate:
+      gate_index: 2
+
+  - platform: hlk_ld2402
+    id: radar_energy_gate_03
+    name: "能量段 3 运动数值 (2.1-2.8m)"
+    hlk_ld2402_id: radar_sensor
+    state_class: measurement
+    unit_of_measurement: "dB"
+    icon: "mdi:antenna"
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    energy_gate:
+      gate_index: 3
+
+  - platform: hlk_ld2402
+    id: radar_energy_gate_04
+    name: "能量段 4 运动数值 (2.8-3.5m)"
+    hlk_ld2402_id: radar_sensor
+    state_class: measurement
+    unit_of_measurement: "dB"
+    icon: "mdi:antenna"
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    energy_gate:
+      gate_index: 4
+
+  - platform: hlk_ld2402
+    id: radar_energy_gate_05
+    name: "能量段 5 运动数值 (3.5-4.2m)"
+    hlk_ld2402_id: radar_sensor
+    state_class: measurement
+    unit_of_measurement: "dB"
+    icon: "mdi:antenna"
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    energy_gate:
+      gate_index: 5
+
+  - platform: hlk_ld2402
+    id: radar_energy_gate_06
+    name: "能量段 6 运动数值 (4.2-4.9m)"
+    hlk_ld2402_id: radar_sensor
+    state_class: measurement
+    unit_of_measurement: "dB"
+    icon: "mdi:antenna"
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    energy_gate:
+      gate_index: 6
+
+  - platform: hlk_ld2402
+    id: radar_energy_gate_07
+    name: "能量段 7 运动数值 (4.9-5.6m)"
+    hlk_ld2402_id: radar_sensor
+    state_class: measurement
+    unit_of_measurement: "dB"
+    icon: "mdi:antenna"
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    energy_gate:
+      gate_index: 7
+
+  - platform: hlk_ld2402
+    id: radar_energy_gate_08
+    name: "能量段 8 运动数值 (5.6-6.3m)"
+    hlk_ld2402_id: radar_sensor
+    state_class: measurement
+    unit_of_measurement: "dB"
+    icon: "mdi:antenna"
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    energy_gate:
+      gate_index: 8
+
+  - platform: hlk_ld2402
+    id: radar_energy_gate_09
+    name: "能量段 9 运动数值 (6.3-7.0m)"
+    hlk_ld2402_id: radar_sensor
+    state_class: measurement
+    unit_of_measurement: "dB"
+    icon: "mdi:antenna"
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    energy_gate:
+      gate_index: 9
+
+  - platform: hlk_ld2402
+    id: radar_energy_gate_10
+    name: "能量段 10 运动数值 (7.0-7.7m)"
+    hlk_ld2402_id: radar_sensor
+    state_class: measurement
+    unit_of_measurement: "dB"
+    icon: "mdi:antenna"
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    energy_gate:
+      gate_index: 10
+
+  - platform: hlk_ld2402
+    id: radar_energy_gate_11
+    name: "能量段 11 运动数值 (7.7-8.4m)"
+    hlk_ld2402_id: radar_sensor
+    state_class: measurement
+    unit_of_measurement: "dB"
+    icon: "mdi:antenna"
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    energy_gate:
+      gate_index: 11
+
+  - platform: hlk_ld2402
+    id: radar_energy_gate_12
+    name: "能量段 12 运动数值 (8.4-9.1m)"
+    hlk_ld2402_id: radar_sensor
+    state_class: measurement
+    unit_of_measurement: "dB"
+    icon: "mdi:antenna"
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    energy_gate:
+      gate_index: 12
+
+  - platform: hlk_ld2402
+    id: radar_energy_gate_13
+    name: "能量段 13 运动数值 (9.1-9.8m)"
+    hlk_ld2402_id: radar_sensor
+    state_class: measurement
+    unit_of_measurement: "dB"
+    icon: "mdi:antenna"
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    energy_gate:
+      gate_index: 13
+
+  - platform: hlk_ld2402
+    id: radar_energy_gate_14
+    name: "能量段 14 运动数值 (9.8-10.5m)"
+    hlk_ld2402_id: radar_sensor
+    state_class: measurement
+    unit_of_measurement: "dB"
+    icon: "mdi:antenna"
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    energy_gate:
+      gate_index: 14
+
+  - platform: hlk_ld2402
+    id: radar_energy_gate_15
+    name: "能量段 15 运动数值 (10.5-11.2m)"
+    hlk_ld2402_id: radar_sensor
+    state_class: measurement
+    unit_of_measurement: "dB"
+    icon: "mdi:antenna"
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    energy_gate:
+      gate_index: 15
+
+# Still Energy Gate Sensors (1-15)
+  - platform: hlk_ld2402
+    id: radar_still_energy_gate_01
+    name: "能量段 1 微动数值 (0.7-1.4m)​"
+    hlk_ld2402_id: radar_sensor
+    state_class: measurement
+    unit_of_measurement: "dB"
+    icon: "mdi:sleep"
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    still_energy_gate:
+      gate_index: 1
+
+  - platform: hlk_ld2402
+    id: radar_still_energy_gate_02
+    name: "能量段 2 微动数值 (1.4-2.1m)​"
+    hlk_ld2402_id: radar_sensor
+    state_class: measurement
+    unit_of_measurement: "dB"
+    icon: "mdi:sleep"
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    still_energy_gate:
+      gate_index: 2
+
+  - platform: hlk_ld2402
+    id: radar_still_energy_gate_03
+    name: "能量段 3 微动数值 (2.1-2.8m)​"
+    hlk_ld2402_id: radar_sensor
+    state_class: measurement
+    unit_of_measurement: "dB"
+    icon: "mdi:sleep"
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    still_energy_gate:
+      gate_index: 3
+
+  - platform: hlk_ld2402
+    id: radar_still_energy_gate_04
+    name: "能量段 4 微动数值 (2.8-3.5m)​"
+    hlk_ld2402_id: radar_sensor
+    state_class: measurement
+    unit_of_measurement: "dB"
+    icon: "mdi:sleep"
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    still_energy_gate:
+      gate_index: 4
+
+  - platform: hlk_ld2402
+    id: radar_still_energy_gate_05
+    name: "能量段 5 微动数值 (3.5-4.2m)​"
+    hlk_ld2402_id: radar_sensor
+    state_class: measurement
+    unit_of_measurement: "dB"
+    icon: "mdi:sleep"
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    still_energy_gate:
+      gate_index: 5
+
+  - platform: hlk_ld2402
+    id: radar_still_energy_gate_06
+    name: "能量段 6 微动数值 (4.2-4.9m)​"
+    hlk_ld2402_id: radar_sensor
+    state_class: measurement
+    unit_of_measurement: "dB"
+    icon: "mdi:sleep"
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    still_energy_gate:
+      gate_index: 6
+
+  - platform: hlk_ld2402
+    id: radar_still_energy_gate_07
+    name: "能量段 7 微动数值 (4.9-5.6m)​"
+    hlk_ld2402_id: radar_sensor
+    state_class: measurement
+    unit_of_measurement: "dB"
+    icon: "mdi:sleep"
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    still_energy_gate:
+      gate_index: 7
+
+  - platform: hlk_ld2402
+    id: radar_still_energy_gate_08
+    name: "能量段 8 微动数值 (5.6-6.3m)​"
+    hlk_ld2402_id: radar_sensor
+    state_class: measurement
+    unit_of_measurement: "dB"
+    icon: "mdi:sleep"
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    still_energy_gate:
+      gate_index: 8
+
+  - platform: hlk_ld2402
+    id: radar_still_energy_gate_09
+    name: "能量段 9 微动数值 (6.3-7.0m)​"
+    hlk_ld2402_id: radar_sensor
+    state_class: measurement
+    unit_of_measurement: "dB"
+    icon: "mdi:sleep"
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    still_energy_gate:
+      gate_index: 9
+
+  - platform: hlk_ld2402
+    id: radar_still_energy_gate_10
+    name: "能量段 10 微动数值 (7.0-7.7m)​"
+    hlk_ld2402_id: radar_sensor
+    state_class: measurement
+    unit_of_measurement: "dB"
+    icon: "mdi:sleep"
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    still_energy_gate:
+      gate_index: 10
+
+  - platform: hlk_ld2402
+    id: radar_still_energy_gate_11
+    name: "能量段 11 微动数值 (7.7-8.4m)​"
+    hlk_ld2402_id: radar_sensor
+    state_class: measurement
+    unit_of_measurement: "dB"
+    icon: "mdi:sleep"
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    still_energy_gate:
+      gate_index: 11
+
+  - platform: hlk_ld2402
+    id: radar_still_energy_gate_12
+    name: "能量段 12 微动数值 (8.4-9.1m)​"
+    hlk_ld2402_id: radar_sensor
+    state_class: measurement
+    unit_of_measurement: "dB"
+    icon: "mdi:sleep"
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    still_energy_gate:
+      gate_index: 12
+
+  - platform: hlk_ld2402
+    id: radar_still_energy_gate_13
+    name: "能量段 13 微动数值 (9.1-9.8m)​"
+    hlk_ld2402_id: radar_sensor
+    state_class: measurement
+    unit_of_measurement: "dB"
+    icon: "mdi:sleep"
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    still_energy_gate:
+      gate_index: 13
+
+  - platform: hlk_ld2402
+    id: radar_still_energy_gate_14
+    name: "能量段 14 微动数值 (9.8-10.5m)​"
+    hlk_ld2402_id: radar_sensor
+    state_class: measurement
+    unit_of_measurement: "dB"
+    icon: "mdi:sleep"
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    still_energy_gate:
+      gate_index: 14
+
+  - platform: hlk_ld2402
+    id: radar_still_energy_gate_15
+    name: "能量段 15 微动数值 (10.5-11.2m)​"
+    hlk_ld2402_id: radar_sensor
+    state_class: measurement
+    unit_of_measurement: "dB"
+    icon: "mdi:sleep"
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    still_energy_gate:
+      gate_index: 15
+
+  # Motion Threshold Sensors (0-15)
+# Micromotion Threshold Sensors (0-15)
+  - platform: hlk_ld2402
+    id: radar_motion_threshold_00
+    name: "距离段 0 运动阈值​"
+    hlk_ld2402_id: radar_sensor
+    state_class: measurement
+    unit_of_measurement: "dB"
+    icon: "mdi:gauge"
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    motion_threshold:
+      gate_index: 0
+
+  - platform: hlk_ld2402
+    id: radar_motion_threshold_01
+    name: "距离段 1 运动阈值​"
+    hlk_ld2402_id: radar_sensor
+    state_class: measurement
+    unit_of_measurement: "dB"
+    icon: "mdi:gauge"
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    motion_threshold:
+      gate_index: 1
+
+  - platform: hlk_ld2402
+    id: radar_motion_threshold_02
+    name: "距离段 2 运动阈值​"
+    hlk_ld2402_id: radar_sensor
+    state_class: measurement
+    unit_of_measurement: "dB"
+    icon: "mdi:gauge"
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    motion_threshold:
+      gate_index: 2
+
+  - platform: hlk_ld2402
+    id: radar_motion_threshold_03
+    name: "距离段 3 运动阈值​"
+    hlk_ld2402_id: radar_sensor
+    state_class: measurement
+    unit_of_measurement: "dB"
+    icon: "mdi:gauge"
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    motion_threshold:
+      gate_index: 3
+
+  - platform: hlk_ld2402
+    id: radar_motion_threshold_04
+    name: "距离段 4 运动阈值​"
+    hlk_ld2402_id: radar_sensor
+    state_class: measurement
+    unit_of_measurement: "dB"
+    icon: "mdi:gauge"
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    motion_threshold:
+      gate_index: 4
+
+  - platform: hlk_ld2402
+    id: radar_motion_threshold_05
+    name: "距离段 5 运动阈值​"
+    hlk_ld2402_id: radar_sensor
+    state_class: measurement
+    unit_of_measurement: "dB"
+    icon: "mdi:gauge"
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    motion_threshold:
+      gate_index: 5
+
+  - platform: hlk_ld2402
+    id: radar_motion_threshold_06
+    name: "距离段 6 运动阈值​"
+    hlk_ld2402_id: radar_sensor
+    state_class: measurement
+    unit_of_measurement: "dB"
+    icon: "mdi:gauge"
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    motion_threshold:
+      gate_index: 6
+
+  - platform: hlk_ld2402
+    id: radar_motion_threshold_07
+    name: "距离段 7 运动阈值​"
+    hlk_ld2402_id: radar_sensor
+    state_class: measurement
+    unit_of_measurement: "dB"
+    icon: "mdi:gauge"
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    motion_threshold:
+      gate_index: 7
+
+  - platform: hlk_ld2402
+    id: radar_motion_threshold_08
+    name: "距离段 8 运动阈值​"
+    hlk_ld2402_id: radar_sensor
+    state_class: measurement
+    unit_of_measurement: "dB"
+    icon: "mdi:gauge"
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    motion_threshold:
+      gate_index: 8
+
+  - platform: hlk_ld2402
+    id: radar_motion_threshold_09
+    name: "距离段 9 运动阈值​"
+    hlk_ld2402_id: radar_sensor
+    state_class: measurement
+    unit_of_measurement: "dB"
+    icon: "mdi:gauge"
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    motion_threshold:
+      gate_index: 9
+
+  - platform: hlk_ld2402
+    id: radar_motion_threshold_10
+    name: "距离段 10 运动阈值​"
+    hlk_ld2402_id: radar_sensor
+    state_class: measurement
+    unit_of_measurement: "dB"
+    icon: "mdi:gauge"
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    motion_threshold:
+      gate_index: 10
+
+  - platform: hlk_ld2402
+    id: radar_motion_threshold_11
+    name: "距离段 11 运动阈值​"
+    hlk_ld2402_id: radar_sensor
+    state_class: measurement
+    unit_of_measurement: "dB"
+    icon: "mdi:gauge"
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    motion_threshold:
+      gate_index: 11
+
+  - platform: hlk_ld2402
+    id: radar_motion_threshold_12
+    name: "距离段 12 运动阈值​"
+    hlk_ld2402_id: radar_sensor
+    state_class: measurement
+    unit_of_measurement: "dB"
+    icon: "mdi:gauge"
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    motion_threshold:
+      gate_index: 12
+
+  - platform: hlk_ld2402
+    id: radar_motion_threshold_13
+    name: "距离段 13 运动阈值​"
+    hlk_ld2402_id: radar_sensor
+    state_class: measurement
+    unit_of_measurement: "dB"
+    icon: "mdi:gauge"
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    motion_threshold:
+      gate_index: 13
+
+  - platform: hlk_ld2402
+    id: radar_motion_threshold_14
+    name: "距离段 14 运动阈值​"
+    hlk_ld2402_id: radar_sensor
+    state_class: measurement
+    unit_of_measurement: "dB"
+    icon: "mdi:gauge"
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    motion_threshold:
+      gate_index: 14
+
+  - platform: hlk_ld2402
+    id: radar_motion_threshold_15
+    name: "距离段 15 运动阈值​"
+    hlk_ld2402_id: radar_sensor
+    state_class: measurement
+    unit_of_measurement: "dB"
+    icon: "mdi:gauge"
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    motion_threshold:
+      gate_index: 15
+
+  # Micromotion Threshold Sensors (0-15)
+  - platform: hlk_ld2402
+    id: radar_micromotion_threshold_00
+    name: "距离段 0 微动阈值"
+    hlk_ld2402_id: radar_sensor
+    state_class: measurement
+    unit_of_measurement: "dB"
+    icon: "mdi:hand-wave"
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    micromotion_threshold:
+      gate_index: 0
+
+  - platform: hlk_ld2402
+    id: radar_micromotion_threshold_01
+    name: "距离段 1 微动阈值"
+    hlk_ld2402_id: radar_sensor
+    state_class: measurement
+    unit_of_measurement: "dB"
+    icon: "mdi:hand-wave"
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    micromotion_threshold:
+      gate_index: 1
+
+  - platform: hlk_ld2402
+    id: radar_micromotion_threshold_02
+    name: "距离段 2 微动阈值"
+    hlk_ld2402_id: radar_sensor
+    state_class: measurement
+    unit_of_measurement: "dB"
+    icon: "mdi:hand-wave"
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    micromotion_threshold:
+      gate_index: 2
+
+  - platform: hlk_ld2402
+    id: radar_micromotion_threshold_03
+    name: "距离段 3 微动阈值"
+    hlk_ld2402_id: radar_sensor
+    state_class: measurement
+    unit_of_measurement: "dB"
+    icon: "mdi:hand-wave"
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    micromotion_threshold:
+      gate_index: 3
+
+  - platform: hlk_ld2402
+    id: radar_micromotion_threshold_04
+    name: "距离段 4 微动阈值"
+    hlk_ld2402_id: radar_sensor
+    state_class: measurement
+    unit_of_measurement: "dB"
+    icon: "mdi:hand-wave"
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    micromotion_threshold:
+      gate_index: 4
+
+  - platform: hlk_ld2402
+    id: radar_micromotion_threshold_05
+    name: "距离段 5 微动阈值"
+    hlk_ld2402_id: radar_sensor
+    state_class: measurement
+    unit_of_measurement: "dB"
+    icon: "mdi:hand-wave"
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    micromotion_threshold:
+      gate_index: 5
+
+  - platform: hlk_ld2402
+    id: radar_micromotion_threshold_06
+    name: "距离段 6 微动阈值"
+    hlk_ld2402_id: radar_sensor
+    state_class: measurement
+    unit_of_measurement: "dB"
+    icon: "mdi:hand-wave"
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    micromotion_threshold:
+      gate_index: 6
+
+  - platform: hlk_ld2402
+    id: radar_micromotion_threshold_07
+    name: "距离段 7 微动阈值"
+    hlk_ld2402_id: radar_sensor
+    state_class: measurement
+    unit_of_measurement: "dB"
+    icon: "mdi:hand-wave"
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    micromotion_threshold:
+      gate_index: 7
+
+  - platform: hlk_ld2402
+    id: radar_micromotion_threshold_08
+    name: "距离段 8 微动阈值"
+    hlk_ld2402_id: radar_sensor
+    state_class: measurement
+    unit_of_measurement: "dB"
+    icon: "mdi:hand-wave"
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    micromotion_threshold:
+      gate_index: 8
+
+  - platform: hlk_ld2402
+    id: radar_micromotion_threshold_09
+    name: "距离段 9 微动阈值"
+    hlk_ld2402_id: radar_sensor
+    state_class: measurement
+    unit_of_measurement: "dB"
+    icon: "mdi:hand-wave"
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    micromotion_threshold:
+      gate_index: 9
+
+  - platform: hlk_ld2402
+    id: radar_micromotion_threshold_10
+    name: "距离段 10 微动阈值"
+    hlk_ld2402_id: radar_sensor
+    state_class: measurement
+    unit_of_measurement: "dB"
+    icon: "mdi:hand-wave"
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    micromotion_threshold:
+      gate_index: 10
+
+  - platform: hlk_ld2402
+    id: radar_micromotion_threshold_11
+    name: "距离段 11 微动阈值"
+    hlk_ld2402_id: radar_sensor
+    state_class: measurement
+    unit_of_measurement: "dB"
+    icon: "mdi:hand-wave"
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    micromotion_threshold:
+      gate_index: 11
+
+  - platform: hlk_ld2402
+    id: radar_micromotion_threshold_12
+    name: "距离段 12 微动阈值"
+    hlk_ld2402_id: radar_sensor
+    state_class: measurement
+    unit_of_measurement: "dB"
+    icon: "mdi:hand-wave"
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    micromotion_threshold:
+      gate_index: 12
+
+  - platform: hlk_ld2402
+    id: radar_micromotion_threshold_13
+    name: "距离段 13 微动阈值"
+    hlk_ld2402_id: radar_sensor
+    state_class: measurement
+    unit_of_measurement: "dB"
+    icon: "mdi:hand-wave"
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    micromotion_threshold:
+      gate_index: 13
+
+  - platform: hlk_ld2402
+    id: radar_micromotion_threshold_14
+    name: "距离段 14 微动阈值"
+    hlk_ld2402_id: radar_sensor
+    state_class: measurement
+    unit_of_measurement: "dB"
+    icon: "mdi:hand-wave"
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    micromotion_threshold:
+      gate_index: 14
+
+  - platform: hlk_ld2402
+    id: radar_micromotion_threshold_15
+    name: "距离段 15 微动阈值"
+    hlk_ld2402_id: radar_sensor
+    state_class: measurement
+    unit_of_measurement: "dB"
+    icon: "mdi:hand-wave"
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    micromotion_threshold:
+      gate_index: 15
+
+# Text sensors
+text_sensor:
+  - platform: hlk_ld2402
+    id: radar_operating_mode
+    name: "运行模式​​"  
+    entity_category: diagnostic
+    hlk_ld2402_id: radar_sensor
+    operating_mode: true
+
+# Control buttons - using template buttons 
+button:
+  - platform: template
+    name: "校准阈值(默认=3)"  
+    entity_category: config
+    on_press:
+      - lambda: id(radar_sensor).calibrate();
+
+  - platform: template
+    name: "自动增益​​​"  
+    entity_category: config
+    on_press:
+      - lambda: id(radar_sensor).enable_auto_gain();
+
+  - platform: template
+    name: "保存配置 " 
+    entity_category: config
+    on_press:
+      - lambda: id(radar_sensor).save_config();
+
+  - platform: template
+    name: "工程模式​​​​​"  
+    icon: "mdi:tune-variant"
+    entity_category: diagnostic
+    on_press:
+      - lambda: id(radar_sensor).set_engineering_mode_direct();
+
+  - platform: template
+    name: "正常模式​​​​​​"  
+    icon: "mdi:tune-variant-off"
+    entity_category: diagnostic
+    on_press:
+      - lambda: id(radar_sensor).set_normal_mode_direct();
+      
+  - platform: template
+    name: "重置设置(含最大距离和超时，阈值=3)"  
+    icon: "mdi:factory-reset"
+    entity_category: config
+    on_press:
+      - logger.log: "WARNING: Performing factory reset on radar module with custom parameters"
+      - lambda: |-
+          id(radar_sensor).factory_reset_with_params(
+            id(max_distance_param).state,
+            static_cast<int>(id(timeout_param).state)
+          );
+
+  - platform: template
+    name: "校准(按​敏⁡感度)⁡"  
+    icon: "mdi:tune-vertical-variant"
+    entity_category: config
+    on_press:
+      - lambda: |-
+          id(radar_sensor).calibrate_with_coefficients(
+            id(trigger_coefficient).state,
+            id(hold_coefficient).state,
+            id(micromotion_coefficient).state
+          );
+
+  - platform: template
+    name: "读取运动阈值​​​​​​​​"  
+    id: read_motion_thresholds
+    icon: "mdi:refresh"
+    entity_category: diagnostic
+    on_press:
+      - lambda: |-
+          id(radar_sensor).read_motion_thresholds();
+          delay(500);
+      
+  - platform: template
+    name: "读取微动阈值​​​​​​​​​"  
+    id: read_micromotion_thresholds
+    icon: "mdi:refresh"
+    entity_category: diagnostic
+    on_press:
+      - lambda: |-
+          id(radar_sensor).read_micromotion_thresholds();
+          delay(500);
+
+  - platform: template
+    name: "设置单距离段阈值"
+    icon: "mdi:check-circle"
+    entity_category: config
+    on_press:
+      - lambda: |-
+          int gate = std::stoi(id(gate_number_select).current_option());
+          float db_value = id(threshold_value_input).state;
+          std::string threshold_type = id(threshold_type_select).current_option();
+          
+          ESP_LOGI("radar", "Setting Gate %d %s to %.1f dB", 
+                   gate, threshold_type.c_str(), db_value);
+          
+          if (threshold_type == "运动阈值") {
+            if (id(radar_sensor).set_motion_threshold(gate, db_value)) {
+              ESP_LOGI("radar", "✓ Motion threshold set successfully");
+            } else {
+              ESP_LOGE("radar", "✗ Failed to set motion threshold");
+            }
+          } else {
+            if (id(radar_sensor).set_micromotion_threshold(gate, db_value)) {
+              ESP_LOGI("radar", "✓ Micromotion threshold set successfully");
+            } else {
+              ESP_LOGE("radar", "✗ Failed to set micromotion threshold");
+            }
+          }
+
+# Add sliders for calibration coefficients and gate thresholds
+number:
+  - platform: template
+    name: "校准触发系数(默认=1)"  
+    id: trigger_coefficient
+    optimistic: true
+    min_value: 1.0
+    max_value: 20.0
+    step: 0.1
+    initial_value: 1.0
+    icon: "mdi:tune-vertical"
+    unit_of_measurement: "x"
+    entity_category: config
+    
+  - platform: template
+    name: "校准保持系数(默认=1.0)"  
+    id: hold_coefficient
+    optimistic: true
+    min_value: 1.0
+    max_value: 20.0
+    step: 0.1
+    initial_value: 1.0
+    icon: "mdi:tune-vertical"
+    unit_of_measurement: "x"
+    entity_category: config
+    
+  - platform: template
+    name: "校准微动系数(默认=1)​"  
+    id: micromotion_coefficient
+    optimistic: true
+    min_value: 1.0
+    max_value: 20.0
+    step: 0.1
+    initial_value: 1.0
+    icon: "mdi:tune-vertical"
+    unit_of_measurement: "x"
+    entity_category: config
+    
+  - platform: template
+    name: "最大距离 (仅复位用)​​​​​​​​​​"  
+    id: max_distance_param
+    optimistic: true
+    min_value: 1.0
+    max_value: 10.0
+    step: 0.1
+    initial_value: 8.0
+    icon: "mdi:ruler"
+    unit_of_measurement: "m"
+    entity_category: config
+    
+  - platform: template
+    name: "超时时间 (仅复位用)​​​​​​​​​​​"  
+    id: timeout_param
+    optimistic: true
+    min_value: 1
+    max_value: 30
+    step: 1
+    initial_value: 5
+    icon: "mdi:timer-outline"
+    unit_of_measurement: "s"
+    entity_category: config
+
+  - platform: template
+    name: "距离段数值 (dB)"
+    id: threshold_value_input
+    optimistic: true
+    min_value: 0
+    max_value: 95
+    step: 0.1
+    initial_value: 50.0
+    icon: "mdi:volume-high"
+    unit_of_measurement: "dB"
+    entity_category: config
+
+status_led:
+  pin: GPIO2
