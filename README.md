@@ -18,4 +18,4 @@
 
 
 ## 鸣谢
-### [大佬分享](https://bbs.hassbian.com/thread-29879-1-1.html)   [源头项目](https://github.com/Mc-Joung/hlk_ld2402_esphome/) ~~AI~~
+### [大佬分享](https://bbs.hassbian.com/thread-29879-1-1.html)  [用户手册](https://h.hlktech.com/download/HLK-LD2402-24G/1/HLK-LD2402%E7%94%A8%E6%88%B7%E6%89%8B%E5%86%8C%20V1.08%20.pdf) [开发资料](https://www.hlktech.com/cn/Goods-248.html#datum)  [源头项目](https://github.com/Mc-Joung/hlk_ld2402_esphome/) ~~AI~~
