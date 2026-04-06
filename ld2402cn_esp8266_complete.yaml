@@ -72,7 +72,7 @@ external_components:
 # external_components:
 #   - source:
 #       type: git
-#       url: https://github.com/yourusername/esphome-hlk-ld2402
+#       url: https://github.com/aaahai00/HLK-LD2402_esphome
 #     components: [hlk_ld2402]
 
 # 雷达主模块配置
