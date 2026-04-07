@@ -51,6 +51,15 @@ uart:
 external_components:
   - source: my_components
     components: [hlk_ld2402]
+    
+# 远程组件（备用）：直接从 GitHub 下载，无需本地文件
+# external_components:
+#   - source:
+#       type: git
+#       url: https://github.com/aaahai00/HLK-LD2402_esphome
+#       ref: main
+#     components: [hlk_ld2402]
+
 
 hlk_ld2402:
   uart_id: uart_bus
